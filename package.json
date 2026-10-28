@@ -1,0 +1,8 @@
+{
+  "name": "suno-coverbot-setup",
+  "private": false,
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=22" },
+  "scripts": { "build": "node scripts/setup-tool/build.mjs" }
+}

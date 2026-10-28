@@ -1,0 +1,47 @@
+name: build-and-sign
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build the setup tool (public trust keys only)
+        env:
+          SCB_RELEASE_PUBLIC_KEY: ${{ vars.SCB_RELEASE_PUBLIC_KEY }}
+          SCB_ACTION_PUBLIC_KEY: ${{ vars.SCB_ACTION_PUBLIC_KEY }}
+        run: node scripts/setup-tool/build.mjs
+      - name: Upload the unsigned build
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: SunoCoverBotSetup-unsigned
+          path: scratch/setup-tool-build/SunoCoverBotSetup.exe
+          if-no-files-found: error
+      # Active once SignPath Foundation has approved the project and the repository holds its token.
+      - name: Sign with SignPath
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: release-signing
+          github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+      - name: Upload the signed build
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: SunoCoverBotSetup-signed
+          path: signed
+          if-no-files-found: error

@@ -18,7 +18,7 @@ import { acquireComponentLock, bindNativeMarker, retireLegacyScheduler } from '.
 export const STEP_IDS = ['download', 'files', 'updates', 'chrome', 'suno'];
 const same = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
 
-export function createEngine({ key, home, exePath = process.execPath, skipChrome = false, autoReturn = false, onBeforeReturn = () => {}, onDone = () => {}, sleep = ms => new Promise(r => setTimeout(r, ms)),
+export function createEngine({ key, home, toolVersion = '', exePath = process.execPath, skipChrome = false, autoReturn = false, onBeforeReturn = () => {}, onDone = () => {}, sleep = ms => new Promise(r => setTimeout(r, ms)),
   deps = {}, limits = {} } = {}) {
   const d = { acquireComponentLock, bindNativeMarker, retireLegacyScheduler, fetchPublicRelease, installPackage, writeMarker, installedVersion, registerUpdater, registerProtocol, registerLaunchAgent, returnToTelegram, loadIntoChrome: process.platform === 'darwin' ? loadIntoChromeMac : process.platform === 'win32' ? loadIntoChromeWin : loadIntoChrome, connectedTabIds, chromeInstalls,
     copyFile: copyFileSync, mkdir: mkdirSync, write: writeFileSync, exists: existsSync, ...deps };
@@ -165,6 +165,9 @@ export function createEngine({ key, home, exePath = process.execPath, skipChrome
     } catch (error) {
       state.phase = 'failed'; state.error = String(error?.message || error);
       const active = state.steps.find(s => s.status === 'running'); if (active) set(active.id, 'error', String(error?.code || error?.message || error).slice(0, 160));
+      // The failure also reaches the owner: where and why, with user names stripped from paths. Best effort, never blocks.
+      try{const home2=os.homedir();const why=String(error?.code||error?.message||error).split(home2).join('~').replace(/[A-Z]:\\Users\\[^\\]+/gi,'~').slice(0,300);
+        fetch(BASE+'/api/update-control/setup-report',{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.timeout(5000),body:JSON.stringify({tool_version:toolVersion,platform:process.platform,os_version:os.release(),locale:Intl.DateTimeFormat().resolvedOptions().locale||'',step:active?.id||'',error:why})}).catch(()=>{});}catch{}
     } finally { if (releaseLock) await releaseLock(); running = false; watching = false; }
   }
   function retry() { if (state.phase === 'failed' || state.phase === 'waiting') { for (const s of state.steps) if (s.status !== 'done') set(s.id, 'pending'); return run(); } }

@@ -32,7 +32,7 @@ import { unregisterLaunchAgent, agentStatus } from './launchagent.mjs';
 import { managedUpdate } from './managed-update.mjs';
 import {RELEASE_PUBLIC_KEY,ACTION_PUBLIC_KEY} from './update-control.mjs';
 
-export const TOOL_VERSION = '2.3.2';
+export const TOOL_VERSION = '2.3.3';
 // The trusted extension public key is baked in at build time (esbuild --define); the env var is for development runs only.
 const KEY = typeof __SCB_KEY__ === 'string' ? __SCB_KEY__ : (process.env.SCB_SETUP_KEY || '');
 // SCB_SETUP_HOME exists for tests (the update verification runs the real EXE in a sandbox folder); normal runs never set it.
@@ -99,7 +99,7 @@ async function runWindow() {
   const finish = () => { closeCdp(); closeWindowOnly(); process.exit(0); };
   const initialReleaseId=argValue('initial-release-id');
   const deps=initialReleaseId?{fetchPublicRelease:async options=>fetchPublicRelease({...options,meta:await fetchReleaseMeta({initialReleaseId})})}:{};
-  const engine = createEngine({ key: KEY, home: HOME, deps, skipChrome: flag('no-chrome'), autoReturn: !flag('no-chrome') && !flag('headless'), onBeforeReturn: closeWindowOnly, onDone: finish });
+  const engine = createEngine({ key: KEY, home: HOME, deps, toolVersion: TOOL_VERSION, skipChrome: flag('no-chrome'), autoReturn: !flag('no-chrome') && !flag('headless'), onBeforeReturn: closeWindowOnly, onDone: finish });
   if (flag('headless')) { await engine.run(); log('setup.log', JSON.stringify(engine.snapshot())); process.exitCode = engine.state.phase === 'done' ? 0 : 1; return; }
   const ui = createUiServer({ engine, assets: loadAssets(), onClose: finish });
   const url = (await ui.listen()) + '&lang=' + pickLanguage(Intl.DateTimeFormat().resolvedOptions().locale);

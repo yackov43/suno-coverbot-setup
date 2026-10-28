@@ -72,7 +72,9 @@ export function createEngine({ key, home, exePath = process.execPath, skipChrome
       set('files', 'running');
       const folder = d.chromeInstalls()[0]?.path || path.join(os.homedir(), 'Documents', 'SunoCoverBot', 'extension');
       // A per-user scheduler currently owns one directory. Preserve its existing scope on a conflicting migration.
-      try{const previous=JSON.parse(readFileSync(path.join(home,'updater.json'),'utf8'));if(previous.directory&&!same(previous.directory,folder))throw Error('MULTIPLE_INSTALLATION_DIRECTORIES');}catch(error){if(error.message==='MULTIPLE_INSTALLATION_DIRECTORIES')throw error;}
+      // The folder Chrome actually loads is the one to keep current: when the extension was loaded by hand from another
+      // folder, the updater moves to it (updater.json is rewritten below) instead of refusing the whole setup.
+      try{const previous=JSON.parse(readFileSync(path.join(home,'updater.json'),'utf8'));if(previous.directory&&!same(previous.directory,folder))state.movedFrom=previous.directory;}catch{}
       releaseLock = await d.acquireComponentLock(folder);
       state.folder = folder;
       d.mkdir(home, { recursive: true });
@@ -162,7 +164,7 @@ export function createEngine({ key, home, exePath = process.execPath, skipChrome
       }
     } catch (error) {
       state.phase = 'failed'; state.error = String(error?.message || error);
-      const active = state.steps.find(s => s.status === 'running'); if (active) set(active.id, 'error');
+      const active = state.steps.find(s => s.status === 'running'); if (active) set(active.id, 'error', String(error?.code || error?.message || error).slice(0, 160));
     } finally { if (releaseLock) await releaseLock(); running = false; watching = false; }
   }
   function retry() { if (state.phase === 'failed' || state.phase === 'waiting') { for (const s of state.steps) if (s.status !== 'done') set(s.id, 'pending'); return run(); } }

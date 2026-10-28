@@ -25,6 +25,8 @@
       if (step.id === 'chrome' && step.status === 'action' && step.detail === 'manual') { more = el('div', 'more', copy.chromeManual); more.appendChild(el('code', '', s.folder)); }
       if (step.id === 'suno' && step.status === 'action') more = el('div', 'more', copy.suno);
       if (step.status === 'running') { more = el('div', 'more', step.id === 'chrome' && step.detail === 'restart' ? copy.chromeRestart : copy.working); }
+      // The reason, verbatim: a screenshot of a failed setup must be enough to diagnose it.
+      if (step.status === 'error' && step.detail) { more = el('div', 'more', String(step.detail)); more.dir = 'ltr'; }
       if (more) li.appendChild(more);
       list.appendChild(li);
     });

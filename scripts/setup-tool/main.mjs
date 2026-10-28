@@ -32,7 +32,7 @@ import { unregisterLaunchAgent, agentStatus } from './launchagent.mjs';
 import { managedUpdate } from './managed-update.mjs';
 import {RELEASE_PUBLIC_KEY,ACTION_PUBLIC_KEY} from './update-control.mjs';
 
-export const TOOL_VERSION = '2.3.1';
+export const TOOL_VERSION = '2.3.2';
 // The trusted extension public key is baked in at build time (esbuild --define); the env var is for development runs only.
 const KEY = typeof __SCB_KEY__ === 'string' ? __SCB_KEY__ : (process.env.SCB_SETUP_KEY || '');
 // SCB_SETUP_HOME exists for tests (the update verification runs the real EXE in a sandbox folder); normal runs never set it.

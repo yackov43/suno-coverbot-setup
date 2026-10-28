@@ -45,3 +45,20 @@ jobs:
           name: SunoCoverBotSetup-signed
           path: signed
           if-no-files-found: error
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build the macOS setup tool (public trust keys only)
+        env:
+          SCB_RELEASE_PUBLIC_KEY: ${{ vars.SCB_RELEASE_PUBLIC_KEY }}
+          SCB_ACTION_PUBLIC_KEY: ${{ vars.SCB_ACTION_PUBLIC_KEY }}
+        run: bash scripts/setup-tool/build-mac.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SunoCoverBotSetup-mac-arm64
+          path: scratch/release-candidates/SunoCoverBotSetup-mac*
+          if-no-files-found: error

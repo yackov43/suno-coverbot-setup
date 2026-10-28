@@ -1,4 +1,6 @@
-import { readFileSync, writeFileSync, renameSync, rmSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, rmSync, existsSync, mkdirSync, chmodSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
+import os from 'node:os';
 import { randomUUID, createHash } from 'node:crypto';
 import path from 'node:path';
 import {ERRORS} from '../../src/update-control/domain.js';
@@ -9,15 +11,44 @@ import { acquireComponentLock, bindNativeMarker, nativeHeartbeat, nativeIdentity
 /** The setup tool updates itself from the same signed release as the extension: download, check the signed hash,
  * then swap the file the scheduler and the protocol handler start. The running copy finishes this run; the next run
  * is the new version. Windows renames a running executable, it only refuses to overwrite it. */
+/** Regular files and folders of a ustar archive, with their modes. Links and anything outside prefix are skipped. */
+export function untar(bytes,prefix=''){
+  const out=[];let longName=null;
+  for(let o=0;o+512<=bytes.length;){
+    const h=bytes.subarray(o,o+512);if(h.every(b=>b===0))break;
+    const str=(a,b)=>h.subarray(a,b).toString('utf8').replace(/\0.*$/s,'');
+    const size=parseInt(str(124,136).trim()||'0',8),type=String.fromCharCode(h[156]||48),mode=parseInt(str(100,108).trim()||'644',8);
+    let name=longName??((str(345,500)?str(345,500)+'/':'')+str(0,100));longName=null;
+    const data=bytes.subarray(o+512,o+512+size);o+=512+Math.ceil(size/512)*512;
+    if(type==='L'){longName=data.toString('utf8').replace(/\0.*$/s,'');continue;}
+    name=name.replace(/^\.\//,'');if(!name.startsWith(prefix)||name.split('/').includes('..'))continue;
+    if(type==='5')out.push({name:name.replace(/\/$/,''),dir:true,mode});else if(type==='0'||type==='\0')out.push({name,data:Buffer.from(data),mode});
+  }
+  return out;
+}
+
 export async function updateSetupTool({home,envelope,toolVersion,base,log=()=>{},deps={}}) {
-  const d={approvedComponent,fetchImpl:fetch,platform:process.platform,arch:process.arch,...deps};
-  if(d.platform!=='win32'||!envelope)return null;
-  let c;try{c=d.approvedComponent(envelope,{component:'windows-setup',platform:'windows',architecture:d.arch==='arm64'?'arm64':'x64'});}catch{return null;}
+  const d={approvedComponent,fetchImpl:fetch,platform:process.platform,arch:process.arch,apps:path.join(os.homedir(),'Applications'),...deps};
+  if(!['win32','darwin'].includes(d.platform)||!envelope)return null;
+  const mac=d.platform==='darwin',arch=d.arch==='arm64'?'arm64':'x64';
+  let c;try{c=d.approvedComponent(envelope,mac?{component:'macos-setup',platform:'macos',architecture:arch}:{component:'windows-setup',platform:'windows',architecture:arch});}catch{return null;}
   if(!isNewerVersion(c.version,toolVersion))return null;
   const url=new URL(c.url,base);if(url.origin!==new URL(base).origin)throw Error('setup_origin_denied');
   const response=await d.fetchImpl(url,{redirect:'error'});if(!response.ok)throw Error('setup_download_failed');
   const bytes=Buffer.from(await response.arrayBuffer());
   if(createHash('sha256').update(bytes).digest('hex')!==c.sha256)throw Error('setup_hash_mismatch');
+  if(mac){
+    // The archive holds SunoCoverBotSetup.app; its Resources carry the core the LaunchAgent runs from the setup folder.
+    const files=untar(gunzipSync(bytes),'SunoCoverBotSetup.app/'),core=files.find(f=>f.name.endsWith('/Contents/Resources/SunoCoverBotSetup-core'));
+    if(!core)throw Error('setup_package_invalid');
+    const app=path.join(d.apps,'SunoCoverBotSetup.app'),staged=app+'.next';rmSync(staged,{recursive:true,force:true});
+    for(const f of files){const target=path.join(staged,f.name.slice('SunoCoverBotSetup.app'.length));if(f.dir){mkdirSync(target,{recursive:true});continue;}mkdirSync(path.dirname(target),{recursive:true});writeFileSync(target,f.data);chmodSync(target,f.mode&0o777);}
+    const bin=path.join(home,'SunoCoverBotSetup-core');writeFileSync(bin+'.next',core.data);chmodSync(bin+'.next',0o755);
+    rmSync(app+'.old',{recursive:true,force:true});if(existsSync(app))renameSync(app,app+'.old');renameSync(staged,app);
+    if(existsSync(bin))renameSync(bin,bin+'.old');renameSync(bin+'.next',bin);
+    log('update.log','setup tool '+toolVersion+' -> '+c.version+' installed; the next scheduled run starts it');
+    return {from:toolVersion,to:c.version};
+  }
   const exe=path.join(home,'SunoCoverBotSetup.exe'),next=exe+'.next',old=exe+'.old';
   writeFileSync(next,bytes);rmSync(old,{force:true});
   if(existsSync(exe))renameSync(exe,old);
@@ -44,7 +75,7 @@ export async function managedUpdate({home,config,toolVersion,reloadChrome=true,l
     let status;try{status=await report();}catch(error){log('update.log','control plane unavailable: '+String(error?.message||error));return {pending:true,state:'OFFLINE',reason:String(error?.message||'CONTROL_UNAVAILABLE')};}
     let meta=status?.target?d.approvedComponent(status.target.envelope):null;
     // The previous copy of the tool, kept until a new one has run once; then the tool keeps itself current.
-    try{rmSync(path.join(home,'SunoCoverBotSetup.exe.old'),{force:true});}catch{}
+    for(const stale of ['SunoCoverBotSetup.exe.old','SunoCoverBotSetup-core.old'])try{rmSync(path.join(home,stale),{force:true});}catch{}
     await updateSetupTool({home,envelope:status?.target?.envelope,toolVersion,base:config.base,log,deps:d.setupTool}).catch(error=>log('update.log','setup tool update deferred: '+String(error?.message||error)));
     // A release signature is checked locally even if the server is authenticated.
     if(meta&&!meta.release_id)throw Error('release_not_approved');
